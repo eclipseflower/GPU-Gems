@@ -3,9 +3,8 @@ Shader "Custom/MyCaustics"
     Properties
     {
         _MainTex ("Texture", 2D) = "white" {}
-        _Octaves("Octaves", range(1, 10)) = 1
-        _Freq("Freq", float) = 1
-        _Amp("Amp", float) = 1
+        _Wavelength("Wavelength", float) = 1
+        _Amplitude("Amplitude", float) = 1
         _Speed("Speed", float) = 1
     }
     SubShader
@@ -29,24 +28,99 @@ Shader "Custom/MyCaustics"
             struct v2f
             {
                 float2 uv : TEXCOORD0;
-                UNITY_FOG_COORDS(1)
                 float4 vertex : SV_POSITION;
+                float3 normal : NORMAL;
             };
 
-            int _Octaves;
-            float _Freq;
-            float _Amp;
+            float _Wavelength;
+            float _Amplitude;
             float _Speed;
 
             sampler2D _MainTex;
             float4 _MainTex_ST;
 
+            float calWaveHeight(float x, float y)
+            {
+                float k = 2 * UNITY_PI / _Wavelength;
+                float f = k * (x + _Speed * _Time.y);
+                y = _Amplitude * sin(f);
+                return y;
+            }
+
             v2f vert (appdata v)
             {
                 v2f o;
-                float x = v.vertex.x;
-                float z = v.vertex.z;
-                v.vertex.y = sqrt(x * x + z * z) * _Amp * cos(_Freq + 2 * _Speed * x * z * _Time.y) / 2;
+                v.vertex.y = calWaveHeight(v.vertex.x, v.vertex.y);
+                o.vertex = UnityObjectToClipPos(v.vertex);
+                o.uv = TRANSFORM_TEX(v.uv, _MainTex);
+                return o;
+            }
+
+            fixed4 frag (v2f i) : SV_Target
+            {
+                // sample the texture
+                fixed4 col = tex2D(_MainTex, i.uv);
+                return col;
+            }
+            ENDCG
+        }
+
+    }
+
+    SubShader
+    {
+        Tags { "RenderType"="Opaque" }
+
+        Pass
+        {
+            CGPROGRAM
+            #pragma vertex vert
+            #pragma fragment frag
+
+            #include "UnityCG.cginc"
+
+            struct appdata
+            {
+                float4 vertex : POSITION;
+                float2 uv : TEXCOORD0;
+            };
+
+            struct v2f
+            {
+                float2 uv : TEXCOORD0;
+                float4 vertex : SV_POSITION;
+            };
+
+            float _Wavelength;
+            float _Amplitude;
+            float _Speed;
+
+            sampler2D _MainTex;
+            float4 _MainTex_ST;
+
+            float calWaveHeight(float x)
+            {
+                float k = 2 * UNITY_PI / _Wavelength;
+                float f = k * (x + _Speed * _Time.y);
+                float y = _Amplitude * sin(f);
+                return y;
+            }
+
+            float3 calWaveNormal(float x)
+            {
+                float k = 2 * UNITY_PI / _Wavelength;
+                float f = k * (x + _Speed * _Time.y);
+                float3 tangent = float3(1, _Amplitude * k * cos(f), 0);
+                float3 binormal = float3(0, 0, 1);
+                float3 normal = cross(binormal, tangent);
+                return normal;
+            }
+
+            v2f vert (appdata v)
+            {
+                v2f o;
+                float y = calWaveHeight(v.vertex.x);
+                float3 n = calWaveNormal(v.vertex.x);
                 o.vertex = UnityObjectToClipPos(v.vertex);
                 o.uv = TRANSFORM_TEX(v.uv, _MainTex);
                 return o;
